@@ -10,6 +10,7 @@ COUNTRY="${COUNTRY:-$DEFAULT_COUNTRY}"
 PROTO="${PROTO:-$DEFAULT_PROTO}"
 
 RULE_DIR="/etc/nftables.d"
+RULE_TMPDIR=""
 
 CN4_URL_BASE="https://www.ipdeny.com/ipblocks/data/countries"
 CN6_URL_BASE="https://www.ipdeny.com/ipv6/ipaddresses/blocks"
@@ -166,13 +167,12 @@ EOF
 generate_rules() {
     normalize_config
 
-    local tmpdir
-    tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    RULE_TMPDIR="$(mktemp -d)"
+    trap cleanup_rule_tmpdir EXIT
 
-    local cn4="${tmpdir}/ipv4.zone"
-    local cn6="${tmpdir}/ipv6.zone"
-    local tmp_rule="${tmpdir}/block.nft"
+    local cn4="${RULE_TMPDIR}/ipv4.zone"
+    local cn6="${RULE_TMPDIR}/ipv6.zone"
+    local tmp_rule="${RULE_TMPDIR}/block.nft"
 
     echo "正在下载 IPv4 ${COUNTRY} IP 段..."
     curl -fsSL "${CN4_URL_BASE}/${COUNTRY}.zone" -o "$cn4"
@@ -191,10 +191,17 @@ generate_rules() {
     echo "正在加载 nftables 规则..."
     nft -f /etc/nftables.conf
 
-    rm -rf "$tmpdir"
+    cleanup_rule_tmpdir
     trap - EXIT
 
     echo "规则已更新：$(rule_file)"
+}
+
+cleanup_rule_tmpdir() {
+    if [ -n "$RULE_TMPDIR" ] && [ -d "$RULE_TMPDIR" ]; then
+        rm -rf "$RULE_TMPDIR"
+    fi
+    RULE_TMPDIR=""
 }
 
 install_update_script() {

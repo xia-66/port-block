@@ -5,7 +5,7 @@ Debian/Ubuntu 服务器 nftables 端口屏蔽脚本。默认屏蔽 `cn` IP 访�
 ## 在线一键脚本
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xia-66/port-block/master/install.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/xia-66/port-block/master/port-block.sh)"
 ```
 
 运行后进入交互菜单，可选择：
