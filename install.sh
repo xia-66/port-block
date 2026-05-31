@@ -5,6 +5,7 @@ SCRIPT_NAME="port-block.sh"
 SCRIPT_URL="${SCRIPT_URL:-}"
 GITHUB_REPO="${GITHUB_REPO:-xia-66/port-block}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-master}"
+TMPDIR_PATH=""
 
 need_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -24,18 +25,27 @@ download_script() {
     curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${SCRIPT_NAME}" -o "$target"
 }
 
+cleanup() {
+    if [ -n "$TMPDIR_PATH" ] && [ -d "$TMPDIR_PATH" ]; then
+        rm -rf "$TMPDIR_PATH"
+    fi
+}
+
 main() {
     need_root
 
-    local tmpdir
-    tmpdir="$(mktemp -d)"
-    trap 'rm -rf "$tmpdir"' EXIT
+    TMPDIR_PATH="$(mktemp -d)"
+    trap cleanup EXIT
 
-    local script_path="${tmpdir}/${SCRIPT_NAME}"
+    local script_path="${TMPDIR_PATH}/${SCRIPT_NAME}"
     download_script "$script_path"
     chmod +x "$script_path"
 
-    bash "$script_path" "${1:-menu}"
+    if [ -r /dev/tty ]; then
+        bash "$script_path" "${1:-menu}" </dev/tty
+    else
+        bash "$script_path" "${1:-menu}"
+    fi
 }
 
 main "$@"
