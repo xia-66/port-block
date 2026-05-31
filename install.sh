@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_NAME="port-block.sh"
 SCRIPT_URL="${SCRIPT_URL:-}"
-GITHUB_REPO="${GITHUB_REPO:-}"
+GITHUB_REPO="${GITHUB_REPO:-xia-66/port-block}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 
 need_root() {
@@ -21,20 +21,7 @@ download_script() {
         return
     fi
 
-    if [ -n "$GITHUB_REPO" ]; then
-        curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${SCRIPT_NAME}" -o "$target"
-        return
-    fi
-
-    if [ -f "./${SCRIPT_NAME}" ]; then
-        cp "./${SCRIPT_NAME}" "$target"
-        return
-    fi
-
-    echo "未找到 ${SCRIPT_NAME}。"
-    echo "从 GitHub 一键安装时请设置 GITHUB_REPO 或 SCRIPT_URL，例如："
-    echo "  curl -fsSL https://raw.githubusercontent.com/xia-66/port-block/main/install.sh | sudo GITHUB_REPO=xia-66/port-block bash"
-    exit 1
+    curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/${SCRIPT_NAME}" -o "$target"
 }
 
 main() {

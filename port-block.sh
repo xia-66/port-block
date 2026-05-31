@@ -328,7 +328,7 @@ EOF
 
     cat > "$(timer_file)" <<EOF
 [Unit]
-Description=Weekly update nftables ${COUNTRY} IP block rules for port ${PORT}
+Description=Weekly auto update nftables ${COUNTRY} IP block rules for port ${PORT}
 
 [Timer]
 OnBootSec=5min
@@ -359,7 +359,7 @@ install_all() {
     echo "协议：${PROTO}"
     echo "规则文件：$(rule_file)"
     echo "更新脚本：$(update_script)"
-    echo "自动更新：每周一次"
+    echo "IP 库自动更新：已启用，每周一次"
     echo
     echo "查看规则：nft list table inet $(table_name)"
     echo "查看定时器：systemctl status update-block-${COUNTRY}-${PORT}.timer"
@@ -476,39 +476,20 @@ interactive_uninstall() {
     uninstall_all
 }
 
-interactive_status() {
-    PORT="$(ask_value "请输入要查看的端口" "$PORT")"
-    COUNTRY="$(ask_value "请输入国家/地区代码" "$COUNTRY")"
-    show_status
-}
-
-interactive_update() {
-    PORT="$(ask_value "请输入要更新的端口" "$PORT")"
-    COUNTRY="$(ask_value "请输入国家/地区代码" "$COUNTRY")"
-    PROTO="$(ask_proto)"
-    need_root
-    ensure_nftables_include
-    generate_rules
-}
-
 show_menu() {
     while true; do
         echo
         echo "nftables IP 屏蔽管理"
-        echo "  1) 安装/重新安装"
+        echo "  1) 安装/重新安装（启用 IP 库自动更新）"
         echo "  2) 修改端口"
-        echo "  3) 查看状态"
-        echo "  4) 手动更新 IP 段"
-        echo "  5) 卸载"
+        echo "  3) 卸载"
         echo "  0) 退出"
         read -r -p "请选择操作 [1]: " choice
 
         case "${choice:-1}" in
             1) interactive_install ;;
             2) change_port ;;
-            3) interactive_status ;;
-            4) interactive_update ;;
-            5) interactive_uninstall ;;
+            3) interactive_uninstall ;;
             0) exit 0 ;;
             *) echo "选择无效，请重新输入。" ;;
         esac
@@ -521,8 +502,6 @@ usage() {
   sudo bash $0 menu          打开交互菜单
   sudo bash $0 install       按当前环境变量安装
   sudo bash $0 change-port   交互式修改端口
-  sudo bash $0 update        手动更新 IP 段
-  sudo bash $0 status        查看状态
   sudo bash $0 uninstall     按当前环境变量卸载
 
 可选环境变量：
