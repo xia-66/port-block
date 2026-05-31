@@ -420,6 +420,92 @@ show_status() {
     systemctl status "update-block-${COUNTRY}-${PORT}.timer" --no-pager || true
 }
 
+detect_proto_from_rule_file() {
+    local file="$1"
+    local has_tcp=0
+    local has_udp=0
+
+    if grep -Eq 'tcp dport [0-9]+ drop' "$file"; then
+        has_tcp=1
+    fi
+
+    if grep -Eq 'udp dport [0-9]+ drop' "$file"; then
+        has_udp=1
+    fi
+
+    case "${has_tcp}${has_udp}" in
+        11) echo "both" ;;
+        10) echo "tcp" ;;
+        01) echo "udp" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+show_blocked_rules() {
+    need_root
+
+    local found=0
+    local file base rule_country rule_port rule_proto rule_table timer
+
+    echo "当前已配置的端口屏蔽规则："
+    echo
+
+    for file in "${RULE_DIR}"/block-*.nft; do
+        [ -e "$file" ] || continue
+
+        base="$(basename "$file" .nft)"
+        rule_country="$(printf '%s' "$base" | sed -E 's/^block-([a-z]{2})-[0-9]+$/\1/')"
+        rule_port="$(printf '%s' "$base" | sed -E 's/^block-[a-z]{2}-([0-9]+)$/\1/')"
+
+        if [ "$rule_country" = "$base" ] || [ "$rule_port" = "$base" ]; then
+            continue
+        fi
+
+        rule_proto="$(detect_proto_from_rule_file "$file")"
+        rule_table="block_${rule_country}_${rule_port}"
+        timer="update-block-${rule_country}-${rule_port}.timer"
+        found=1
+
+        echo "- 国家/地区：${rule_country}"
+        echo "  端口：${rule_port}"
+        echo "  协议：${rule_proto}"
+        echo "  规则文件：${file}"
+
+        if nft list table inet "$rule_table" >/dev/null 2>&1; then
+            echo "  nftables：已加载"
+        else
+            echo "  nftables：未加载"
+        fi
+
+        if systemctl is-enabled "$timer" >/dev/null 2>&1; then
+            echo "  自动更新：已启用"
+        else
+            echo "  自动更新：未启用"
+        fi
+
+        echo
+    done
+
+    if [ "$found" -eq 0 ]; then
+        echo "暂无已配置的端口屏蔽规则。"
+    fi
+}
+
+has_blocked_rules() {
+    local file base
+
+    for file in "${RULE_DIR}"/block-*.nft; do
+        [ -e "$file" ] || continue
+
+        base="$(basename "$file" .nft)"
+        if printf '%s' "$base" | grep -Eq '^block-[a-z]{2}-[0-9]+$'; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 ask_value() {
     local prompt="$1"
     local default_value="$2"
@@ -459,11 +545,39 @@ interactive_install() {
 change_port() {
     need_root
 
-    local old_port new_port old_country old_proto
+    echo "修改端口前，请先确认当前已配置的屏蔽规则："
+    echo
+    show_blocked_rules
+    echo
+
+    if ! has_blocked_rules; then
+        echo "当前没有可修改的端口屏蔽规则，请先新增端口屏蔽。"
+        return
+    fi
+
+    local old_port new_port old_country old_proto old_rule_file
     old_port="$(ask_value "请输入当前已安装端口" "$PORT")"
-    new_port="$(ask_value "请输入新端口" "$old_port")"
     old_country="$(ask_value "请输入国家/地区代码" "$COUNTRY")"
-    old_proto="$(ask_proto)"
+
+    PORT="$old_port"
+    COUNTRY="$old_country"
+    PROTO="both"
+    normalize_config
+
+    old_rule_file="$(rule_file)"
+    if [ ! -f "$old_rule_file" ]; then
+        echo "未找到对应规则：${old_rule_file}"
+        echo "请先选择“查看当前屏蔽”，确认要修改的端口和国家/地区代码。"
+        return
+    fi
+
+    old_proto="$(detect_proto_from_rule_file "$old_rule_file")"
+    if [ "$old_proto" = "unknown" ]; then
+        echo "未能从规则文件识别协议，请手动选择。"
+        old_proto="$(ask_proto)"
+    fi
+
+    new_port="$(ask_value "请输入新端口" "$old_port")"
 
     PORT="$old_port"
     COUNTRY="$old_country"
@@ -487,16 +601,18 @@ show_menu() {
     while true; do
         echo
         echo "nftables IP 屏蔽管理"
-        echo "  1) 安装/重新安装（启用 IP 库自动更新）"
-        echo "  2) 修改端口"
-        echo "  3) 卸载"
+        echo "  1) 查看当前屏蔽"
+        echo "  2) 新增端口屏蔽（启用 IP 库自动更新）"
+        echo "  3) 修改端口"
+        echo "  4) 卸载"
         echo "  0) 退出"
         read -r -p "请选择操作 [1]: " choice
 
         case "${choice:-1}" in
-            1) interactive_install ;;
-            2) change_port ;;
-            3) interactive_uninstall ;;
+            1) show_blocked_rules ;;
+            2) interactive_install ;;
+            3) change_port ;;
+            4) interactive_uninstall ;;
             0) exit 0 ;;
             *) echo "选择无效，请重新输入。" ;;
         esac
@@ -508,6 +624,7 @@ usage() {
 用法：
   sudo bash $0 menu          打开交互菜单
   sudo bash $0 install       按当前环境变量安装
+  sudo bash $0 list          查看当前屏蔽
   sudo bash $0 change-port   交互式修改端口
   sudo bash $0 uninstall     按当前环境变量卸载
 
@@ -527,6 +644,7 @@ case "${1:-menu}" in
     menu) show_menu ;;
     install) install_all ;;
     change-port|port) change_port ;;
+    list) show_blocked_rules ;;
     uninstall|remove) uninstall_all ;;
     update)
         need_root
