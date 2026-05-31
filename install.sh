@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_NAME="port-block.sh"
 SCRIPT_URL="${SCRIPT_URL:-}"
 GITHUB_REPO="${GITHUB_REPO:-xia-66/port-block}"
-GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
+GITHUB_BRANCH="${GITHUB_BRANCH:-master}"
 
 need_root() {
     if [ "$(id -u)" -ne 0 ]; then
