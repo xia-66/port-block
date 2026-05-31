@@ -391,6 +391,58 @@ uninstall_all() {
     echo "已卸载 ${COUNTRY} IP 屏蔽规则：端口 ${PORT}，协议 ${PROTO}。"
 }
 
+uninstall_all_block_rules() {
+    need_root
+
+    local found=0
+    local file base rule_country rule_port rule_table timer service updater
+    local confirm
+
+    show_blocked_rules
+    echo
+    read -r -p "确认卸载所有端口屏蔽规则？输入 yes 继续: " confirm
+
+    if [ "$confirm" != "yes" ]; then
+        echo "已取消卸载。"
+        return
+    fi
+
+    for file in "${RULE_DIR}"/block-*.nft; do
+        [ -e "$file" ] || continue
+
+        base="$(basename "$file" .nft)"
+        if ! printf '%s' "$base" | grep -Eq '^block-[a-z]{2}-[0-9]+$'; then
+            continue
+        fi
+
+        rule_country="$(printf '%s' "$base" | sed -E 's/^block-([a-z]{2})-[0-9]+$/\1/')"
+        rule_port="$(printf '%s' "$base" | sed -E 's/^block-[a-z]{2}-([0-9]+)$/\1/')"
+        rule_table="block_${rule_country}_${rule_port}"
+        timer="/etc/systemd/system/update-block-${rule_country}-${rule_port}.timer"
+        service="/etc/systemd/system/update-block-${rule_country}-${rule_port}.service"
+        updater="/usr/local/sbin/update-block-${rule_country}-${rule_port}.sh"
+        found=1
+
+        systemctl disable --now "update-block-${rule_country}-${rule_port}.timer" 2>/dev/null || true
+        rm -f "$timer" "$service" "$updater" "$file"
+
+        if nft list table inet "$rule_table" >/dev/null 2>&1; then
+            nft delete table inet "$rule_table" || true
+        fi
+
+        echo "已卸载：${rule_country} -> ${rule_port}"
+    done
+
+    if [ "$found" -eq 0 ]; then
+        echo "没有找到可卸载的端口屏蔽规则。"
+        return
+    fi
+
+    systemctl daemon-reload
+    nft -f /etc/nftables.conf || true
+    echo "所有端口屏蔽规则已卸载。"
+}
+
 show_status() {
     need_root
     normalize_config
@@ -597,22 +649,40 @@ interactive_uninstall() {
     uninstall_all
 }
 
+manage_blocked_rules_menu() {
+    while true; do
+        echo
+        show_blocked_rules
+        echo
+        echo "端口屏蔽管理"
+        echo "  1) 新增端口屏蔽"
+        echo "  2) 修改端口"
+        echo "  0) 返回上级菜单"
+        read -r -p "请选择操作 [0]: " choice
+
+        case "${choice:-0}" in
+            1) interactive_install ;;
+            2) change_port ;;
+            0) return ;;
+            *) echo "选择无效，请重新输入。" ;;
+        esac
+    done
+}
+
 show_menu() {
     while true; do
         echo
         echo "nftables IP 屏蔽管理"
-        echo "  1) 查看当前屏蔽"
-        echo "  2) 新增端口屏蔽（启用 IP 库自动更新）"
-        echo "  3) 修改端口"
-        echo "  4) 卸载"
+        echo "  1) 安装一个端口屏蔽"
+        echo "  2) 查看端口屏蔽"
+        echo "  3) 卸载所有端口屏蔽"
         echo "  0) 退出"
         read -r -p "请选择操作 [1]: " choice
 
         case "${choice:-1}" in
-            1) show_blocked_rules ;;
-            2) interactive_install ;;
-            3) change_port ;;
-            4) interactive_uninstall ;;
+            1) interactive_install ;;
+            2) manage_blocked_rules_menu ;;
+            3) uninstall_all_block_rules ;;
             0) exit 0 ;;
             *) echo "选择无效，请重新输入。" ;;
         esac
@@ -626,7 +696,8 @@ usage() {
   sudo bash $0 install       按当前环境变量安装
   sudo bash $0 list          查看当前屏蔽
   sudo bash $0 change-port   交互式修改端口
-  sudo bash $0 uninstall     按当前环境变量卸载
+  sudo bash $0 uninstall     按当前环境变量卸载单个规则
+  sudo bash $0 uninstall-all 卸载所有端口屏蔽
 
 可选环境变量：
   PORT=55555
@@ -646,6 +717,7 @@ case "${1:-menu}" in
     change-port|port) change_port ;;
     list) show_blocked_rules ;;
     uninstall|remove) uninstall_all ;;
+    uninstall-all|remove-all) uninstall_all_block_rules ;;
     update)
         need_root
         normalize_config
